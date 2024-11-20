@@ -16,17 +16,21 @@ internal class FileContentHelper
     /// <param name="quate"></param>
     /// <returns></returns>
     /// <exception cref="ArgumentOutOfRangeException"></exception>
-    public static List<string> GetCNContent(string path, string[] patterns, QuoteType quate = QuoteType.Double)
+    public static List<string> GetCNContent(string path, string[] patterns, QuoteType quate = QuoteType.Double, string[]? excludeFiles = null)
     {
         var files = Directory.EnumerateFiles(path, "*.*", SearchOption.AllDirectories)
             .Where(file => patterns.Contains(Path.GetExtension(file)))
             .ToList();
 
+        if (excludeFiles != null)
+        {
+            files = files.Where(file => !excludeFiles.Contains(Path.GetFileName(file))).ToList();
+        }
         var pattern = quate switch
         {
-            QuoteType.Single => @"'[\u4e00-\u9fa5]+?'",
-            QuoteType.Double => @"""[\u4e00-\u9fa5]+?""",
-            QuoteType.Both => @"['""][\u4e00-\u9fa5]+?['""]",
+            QuoteType.Single => @"'[^'\u4e00-\u9fa5]*[\u4e00-\u9fa5]+[^'\u4e00-\u9fa5]*'",
+            QuoteType.Double => @"""[^""\u4e00-\u9fa5]*[\u4e00-\u9fa5]+[^""\u4e00-\u9fa5]*""",
+            QuoteType.Both => @"(['""])([^\r\n'""]*[\u4e00-\u9fa5][^\r\n'""]*)\1",
             _ => throw new ArgumentOutOfRangeException(nameof(quate), quate, null)
         };
         var regex = new Regex(pattern, RegexOptions.Compiled);
@@ -38,15 +42,13 @@ internal class FileContentHelper
             var matches = regex.Matches(content);
             foreach (Match match in matches)
             {
-                contentSet.Add(match.Value);
+                var value = match.Value.Trim('\'', '"');
+                contentSet.Add(value);
             }
         }
         return contentSet.ToList();
     }
 
-
-    [RequiresUnreferencedCode("Calls System.Text.Json.JsonSerializer.Deserialize<TValue>(String, JsonSerializerOptions)")]
-    [RequiresDynamicCode("Calls System.Text.Json.JsonSerializer.Deserialize<TValue>(String, JsonSerializerOptions)")]
     public static Dictionary<string, string> ReadJsonToDictionary(string path)
     {
         if (File.Exists(path))
@@ -65,7 +67,7 @@ internal class FileContentHelper
     /// <param name="data"></param>
     /// <param name="matchTemplates"></param>
     /// <param name="replaceTemplate"></param>
-    public static void ReplaceContent(string path, string[] patterns, Dictionary<string, string> data, string[] matchTemplates, string[] replaceTemplates)
+    public static void ReplaceContent(string path, string[] patterns, Dictionary<string, string> data, string[] matchTemplates, string[] replaceTemplates, string[]? excludeFiles = null)
     {
         if (matchTemplates.Length != replaceTemplates.Length)
         {
@@ -75,6 +77,10 @@ internal class FileContentHelper
         var files = Directory.EnumerateFiles(path, "*.*", SearchOption.AllDirectories)
             .Where(file => patterns.Contains(Path.GetExtension(file)))
             .ToList();
+        if (excludeFiles != null)
+        {
+            files = files.Where(file => !excludeFiles.Contains(Path.GetFileName(file))).ToList();
+        }
         foreach (var file in files)
         {
             var content = File.ReadAllText(file);
@@ -82,8 +88,8 @@ internal class FileContentHelper
             {
                 for (var i = 0; i < matchTemplates.Length; i++)
                 {
-                    var match = string.Format(matchTemplates[i], item.Key);
-                    var replace = string.Format(replaceTemplates[i], item.Value);
+                    var match = string.Format(matchTemplates[i], item.Value);
+                    var replace = string.Format(replaceTemplates[i], item.Key);
                     content = content.Replace(match, replace);
                 }
             }
